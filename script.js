@@ -6,9 +6,11 @@ const amPmSelect = document.getElementById("amPmSelect");
 const activeAlarms = document.querySelector(".activeAlarms");
 const setAlarm = document.getElementById("set");
 let alarmsArray = [];
-let alarmSound = new Audio("alarm.mp3");
+let alarmSound = new Audio("./alarm.mp3");
 
-let alarmIndex = 0;
+let initialHour = 0,
+  initialMinute = 0,
+  alarmIndex = 0;
 
 // Append zeroes for single digit
 const appendZero = (value) => (value < 10 ? "0" + value : value);
@@ -32,15 +34,15 @@ const searchObject = (parameter, value) => {
 // Display Time
 function displayTimer() {
   let date = new Date();
-  let hours = date.getHours();
-  let minutes = date.getMinutes();
-  let seconds = date.getSeconds();
+  let [hours, minutes, seconds] = [
+    appendZero(date.getHours()),
+    appendZero(date.getMinutes()),
+    appendZero(date.getSeconds()),
+  ];
 
+  // Convert hours to 12-hour format
   let amPm = hours >= 12 ? "PM" : "AM";
-  hours = hours % 12 || 12; // Convert to 12-hour format
-  hours = appendZero(hours);
-  minutes = appendZero(minutes);
-  seconds = appendZero(seconds);
+  hours = hours % 12 || 12;
 
   // Display time
   timerRef.innerHTML = `${hours}:${minutes}:${seconds} ${amPm}`;
@@ -48,11 +50,20 @@ function displayTimer() {
   // Alarm
   alarmsArray.forEach((alarm, index) => {
     if (alarm.isActive) {
+      let alarmHour = parseInt(alarm.alarmHour);
+      let alarmMinute = parseInt(alarm.alarmMinute);
+
+      // Convert alarm hour to 24-hour format if necessary
+      if (alarm.amPm === "PM" && alarmHour !== 12) {
+        alarmHour += 12;
+      } else if (alarm.amPm === "AM" && alarmHour === 12) {
+        alarmHour = 0;
+      }
+
       if (
-        alarm.amPm === amPm &&
-        alarm.alarmHour === hours &&
-        alarm.alarmMinute === minutes &&
-        seconds === "00" // Check if it's the start of a new minute
+        alarmHour === date.getHours() &&
+        alarmMinute === date.getMinutes() &&
+        seconds === "00"
       ) {
         alarmSound.play();
         alarmSound.loop = true;
@@ -81,6 +92,7 @@ minuteInput.addEventListener("input", () => {
 const createAlarm = (alarmObj) => {
   // Keys from object
   const { id, alarmHour, alarmMinute, amPm } = alarmObj;
+
   // Alarm div
   let alarmDiv = document.createElement("div");
   alarmDiv.classList.add("alarm");
@@ -98,6 +110,7 @@ const createAlarm = (alarmObj) => {
     }
   });
   alarmDiv.appendChild(checkbox);
+
   // Delete button
   let deleteButton = document.createElement("button");
   deleteButton.innerHTML = `<i class="fa-solid fa-trash-can"></i>`;
@@ -112,112 +125,58 @@ const createAlarm = (alarmObj) => {
 setAlarm.addEventListener("click", () => {
   alarmIndex += 1;
 
-  // Alarm object
+  // Alarm Object
   let alarmObj = {};
   alarmObj.id = `${alarmIndex}_${hourInput.value}_${minuteInput.value}`;
   alarmObj.alarmHour = hourInput.value;
   alarmObj.alarmMinute = minuteInput.value;
   alarmObj.amPm = amPmSelect.value;
-  alarmObj.isActive = false; // Set isActive to false initially
+  alarmObj.isActive = false;
+  console.log(alarmObj);
 
-  const [exists, existingAlarm] = searchObject("id", alarmObj.id);
-  if (exists) {
-    activeAlarms.removeChild(
-      document.querySelector(`[data-id="${existingAlarm.id}"]`)
-    );
-    alarmsArray.splice(existingAlarm.objIndex, 1);
-  }
-
-  // Push alarm object into array
   alarmsArray.push(alarmObj);
-  // Create alarm div
   createAlarm(alarmObj);
-
-  // Reset input values
-  hourInput.value = "";
-  minuteInput.value = "";
+  hourInput.value = appendZero(initialHour);
+  minuteInput.value = appendZero(initialMinute);
 });
 
 // Start Alarm
-function startAlarm(e) {
-  let alarmId = e.target.parentNode.getAttribute("data-id");
-  const [, alarmObj, objIndex] = searchObject("id", alarmId);
-
-  // Clear any existing timeouts for the alarm
-  clearTimeout(alarmObj.timeout);
-
-  // Get the current time and the alarm time
-  const currentTime = new Date();
-  const currentHour = currentTime.getHours();
-  const currentMinute = currentTime.getMinutes();
-
-  let alarmHour = parseInt(alarmObj.alarmHour);
-  let alarmMinute = parseInt(alarmObj.alarmMinute);
-  let amPm = alarmObj.amPm;
-
-  // Convert alarm time to 24-hour format if necessary
-  if (amPm === "PM" && alarmHour !== 12) {
-    alarmHour += 12;
-  } else if (amPm === "AM" && alarmHour === 12) {
-    alarmHour = 0;
+const startAlarm = (e) => {
+  let searchId = e.target.parentElement.getAttribute("data-id");
+  let [exists, obj, index] = searchObject("id", searchId);
+  if (exists) {
+    alarmsArray[index].isActive = true;
   }
-
-  // Calculate the time remaining until the next occurrence of the alarm
-  let timeDiff = 0;
-  if (
-    currentHour > alarmHour ||
-    (currentHour === alarmHour && currentMinute >= alarmMinute)
-  ) {
-    // If the alarm time has already passed for the current day, schedule it for the next day
-    const tomorrow = new Date(currentTime.getTime() + 24 * 60 * 60 * 1000);
-    tomorrow.setHours(alarmHour);
-    tomorrow.setMinutes(alarmMinute);
-    tomorrow.setSeconds(0);
-    tomorrow.setMilliseconds(0);
-    timeDiff = tomorrow.getTime() - currentTime.getTime();
-  } else {
-    // If the alarm time is in the future for the current day
-    const alarmTime = new Date();
-    alarmTime.setHours(alarmHour);
-    alarmTime.setMinutes(alarmMinute);
-    alarmTime.setSeconds(0);
-    alarmTime.setMilliseconds(0);
-    timeDiff = alarmTime.getTime() - currentTime.getTime();
-  }
-
-  // Set a timeout for the alarm to start at the specified time
-  alarmObj.timeout = setTimeout(() => {
-    alarmSound.currentTime = 0;
-    alarmSound.play();
-    alarmSound.loop = true;
-  }, timeDiff);
-
-  alarmsArray[objIndex].isActive = true;
-}
+};
 
 // Stop Alarm
-function stopAlarm(e) {
-  let alarmId = e.target.parentNode.getAttribute("data-id");
-  const [, alarmObj, objIndex] = searchObject("id", alarmId);
-
-  // Clear the timeout for the alarm
-  clearTimeout(alarmObj.timeout);
-
-  alarmsArray[objIndex].isActive = false;
-  alarmSound.pause();
-  alarmSound.loop = false;
-}
+const stopAlarm = (e) => {
+  let searchId = e.target.parentElement.getAttribute("data-id");
+  let [exists, obj, index] = searchObject("id", searchId);
+  if (exists) {
+    alarmsArray[index].isActive = false;
+    if (alarmSound) {
+      alarmSound.pause();
+    }
+  }
+};
 
 // Delete Alarm
-function deleteAlarm(e) {
-  let alarmId = e.target.parentNode.getAttribute("data-id");
-  const [, , objIndex] = searchObject("id", alarmId);
-  alarmsArray.splice(objIndex, 1);
-  activeAlarms.removeChild(e.target.parentNode);
-}
+const deleteAlarm = (e) => {
+  let searchId = e.target.parentElement.parentElement.getAttribute("data-id");
+  let [exists, obj, index] = searchObject("id", searchId);
+  if (exists) {
+    e.target.parentElement.parentElement.remove();
+    alarmsArray.splice(index, 1);
+  }
+};
 
-// Update time every second
-setInterval(displayTimer, 1000);
-
-// Initial time display
-displayTimer();
+window.onload = () => {
+  setInterval(displayTimer);
+  initialHour = 0;
+  initialMinute = 0;
+  alarmIndex = 0;
+  alarmsArray = [];
+  hourInput.value = appendZero(initialHour);
+  minuteInput.value = appendZero(initialMinute);
+};
